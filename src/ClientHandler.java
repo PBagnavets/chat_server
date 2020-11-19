@@ -1,16 +1,14 @@
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.net.Socket;
-import java.util.StringTokenizer;
 
 public class ClientHandler extends Thread {
 
     private final Socket client;
     private final ChatServer chatServer;
     private String name;
-    private DataOutputStream dataOut;
-    private DataInputStream dataIn;
+    private PrintWriter dataOut;
+    private BufferedReader dataIn;
+    private ClientHandler companion = null;
 
     public ClientHandler(Socket client, ChatServer chatServer) {
         this.chatServer = chatServer;
@@ -22,38 +20,88 @@ public class ClientHandler extends Thread {
 
         try {
             //creating input stream and output stream
-            this.dataOut = new DataOutputStream(client.getOutputStream());
-            this.dataIn = new DataInputStream(client.getInputStream());
+            InputStream input = client.getInputStream();
+            this.dataIn = new BufferedReader(new InputStreamReader(input));
 
-            //send names of all users currently online
-            this.printUsers();
+            OutputStream output = client.getOutputStream();
+            this.dataOut = new PrintWriter(output, true);
 
-            //get user's name
-            this.name = dataIn.readUTF();
-            chatServer.addUser(name, this);
+            //get name of new user
+            this.registerUser();
 
-            //send to all, that there is new user
-            chatServer.sendToAll("New user on server: [" + name + "]", this);
+            //Select client for dialog
 
-            //MAIN
-            String clientMessage;
+            this.chooseCompanion();
 
-            //while socket is open
-            do {
-                clientMessage = dataIn.readUTF();
-                StringTokenizer stringTokenizer = new StringTokenizer(clientMessage, "#");
-                String receiverName = stringTokenizer.nextToken();
-                String message = stringTokenizer.nextToken();
-                chatServer.sendToUser(message, receiverName, this.name);
-            } while (!clientMessage.equalsIgnoreCase("disconnect"));
+            //dialog
 
-            //disconnect
-            chatServer.removeUser(this.name);
-            client.close();
-            chatServer.sendToAll("[" + this.name + "] left server", this);
+            this.startDialog();
 
         } catch (IOException e) {
             e.printStackTrace();
+        }
+    }
+
+    public void registerUser() throws IOException {
+
+        this.printUsers();
+
+        this.name = dataIn.readLine();
+        chatServer.addUser(this.name, this);
+        chatServer.addFreeUser(this.name, this);
+
+        chatServer.sendToAll("New user on server: [" + name + "]", this);
+        System.out.print("Users on server: " + chatServer.getUserNames().size());
+    }
+
+    public void chooseCompanion() throws IOException {
+
+        printFreeUsers();
+
+        String name;
+        if (chatServer.hasFreeUsers()) {
+            sendMessage("Enter name of your companion:");
+            name = dataIn.readLine();
+            this.setCompanion(chatServer.getFreeUser(name));
+            companion.setCompanion(this);
+            chatServer.removeFreeUser(companion.getUserName());
+            chatServer.removeFreeUser(this.name);
+        } else {
+            sendMessage("There are no free users. Please wait.");
+            //String clientMessage;
+            while (this.companion == null) {
+                try {
+                    this.sleep(200);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+            }
+            sendMessage("You are invited to chat with " + companion.getUserName());
+        }
+
+
+    }
+
+    public void startDialog() throws IOException {
+        String clientMessage;
+        //while socket is open
+        do {
+            clientMessage = dataIn.readLine();
+            chatServer.sendToUser(clientMessage, companion, this.name);
+        } while (!clientMessage.equalsIgnoreCase(ChatServer.STOP_WORD) || this.companion != null);
+
+        if (clientMessage.equalsIgnoreCase(ChatServer.STOP_WORD)) {
+            //disconnect
+            chatServer.removeUser(this.name);
+            chatServer.addFreeUser(companion.getUserName(), companion);
+            companion.sendMessage("Your companion disconnects");
+            companion.setCompanion(null);
+            chatServer.sendToAll("[" + this.name + "] left server", this);
+            System.out.println("Users on server: " + chatServer.getUserNames().size());
+            client.close();
+        } else {
+            chooseCompanion();
+            startDialog();
         }
     }
 
@@ -65,12 +113,23 @@ public class ClientHandler extends Thread {
         }
     }
 
-    public void sendMessage(String message) {
-        try {
-            dataOut.writeUTF(message);
-        } catch (IOException e) {
-            e.printStackTrace();
+    private void printFreeUsers() {
+        if (chatServer.getFreeUserNames(this.name).size() > 0) {
+            this.sendMessage("Free users on server: " + chatServer.getFreeUserNames(this.name));
+        } else {
+            this.sendMessage("No free users on server.");
         }
     }
 
+    public void sendMessage(String message) {
+            dataOut.println(message);
+    }
+
+    public String getUserName() {
+        return this.name;
+    }
+
+    public void setCompanion(ClientHandler companion) {
+        this.companion = companion;
+    }
 }

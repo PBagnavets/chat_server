@@ -6,20 +6,14 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ChatServer {
 
-    private static int port = 8080;
-    private Map<String, ClientHandler> users = new ConcurrentHashMap<>();
-    private Map<String, List<ClientHandler>> rooms = new ConcurrentHashMap<>();
-
-    //public void sendToAll
-    private ChatServer(int port) {
-        ChatServer.port = port;
-    }
+    private static final int port = 8080;
+    public static final String STOP_WORD = "bye";
+    private final Map<String, ClientHandler> users = new ConcurrentHashMap<>();
+    private final Map<String, ClientHandler> freeUsers = new ConcurrentHashMap<>();
+//    private final Map<String, List<ClientHandler>> rooms = new ConcurrentHashMap<>();
 
     public static void main(String[] args) {
-        if (args.length == 1) {
-            ChatServer.setPort(Integer.parseInt(args[0]));
-        }
-        ChatServer chatServer = new ChatServer(port);
+        ChatServer chatServer = new ChatServer();
         System.out.println("Server started. Port : " + port);
         chatServer.runServer();
     }
@@ -50,36 +44,53 @@ public class ChatServer {
         }
     }
 
-    public void sendToUser(String message, String receiverName, String senderName) {
-        ClientHandler receiver = users.get(receiverName);
-        if (receiver != null) {
+    public void sendToUser(String message, ClientHandler receiver, String senderName) {
             receiver.sendMessage(senderName + " << " + message);
-        } else {
-            users.get(senderName).sendMessage("SERVER >> No such user");
-        }
-    }
-
-    private static void setPort(int port) {
-        ChatServer.port = port;
     }
 
     public void addUser(String name, ClientHandler client) {
         users.put(name, client);
     }
 
+    public void addFreeUser(String name, ClientHandler client) {
+        freeUsers.put(name, client);
+    }
+
     public void removeUser(String name) {
         users.remove(name);
+    }
+
+    public void removeFreeUser(String name) {
+        freeUsers.remove(name);
     }
 
     public boolean hasUsers() {
         return !this.users.isEmpty();
     }
 
+    public boolean hasFreeUsers() {
+        return this.freeUsers.size() > 1;
+    }
+
     public Set<String> getUserNames() {
         return this.users.keySet();
     }
 
+    public Set<String> getFreeUserNames(String name) {
+        Set<String> set= new HashSet<>(freeUsers.keySet());
+        set.remove(name);
+        return set;
+    }
+
     public boolean hasThisName(String name) {
         return users.containsKey(name);
+    }
+
+    public boolean hasThisFreeName(String name) {
+        return freeUsers.containsKey(name);
+    }
+
+    public ClientHandler getFreeUser(String name) {
+        return freeUsers.get(name);
     }
 }
