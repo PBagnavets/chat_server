@@ -26,7 +26,7 @@ public class ChatServer {
                 //close server via server console
 
                 Socket client = serverSocket.accept();
-                System.out.println("New client request: " + client);
+                //System.out.println("New client request: " + client);
 
                 ClientHandler newUser = new ClientHandler(client, this);
                 newUser.start();
@@ -77,7 +77,7 @@ public class ChatServer {
     }
 
     public Set<String> getFreeUserNames(String name) {
-        Set<String> set= new HashSet<>(freeUsers.keySet());
+        Set<String> set = new HashSet<>(freeUsers.keySet());
         set.remove(name);
         return set;
     }

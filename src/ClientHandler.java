@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.Socket;
+import java.net.SocketException;
 
 public class ClientHandler extends Thread {
 
@@ -36,7 +37,8 @@ public class ClientHandler extends Thread {
             //dialog
 
             this.startDialog();
-
+        } catch (SocketException e) {
+            System.out.println("Client disconnected");
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -44,14 +46,13 @@ public class ClientHandler extends Thread {
 
     public void registerUser() throws IOException {
 
-        this.printUsers();
+        printUsers();
 
         this.name = dataIn.readLine();
         chatServer.addUser(this.name, this);
         chatServer.addFreeUser(this.name, this);
 
         chatServer.sendToAll("New user on server: [" + name + "]", this);
-        System.out.print("Users on server: " + chatServer.getUserNames().size());
     }
 
     public void chooseCompanion() throws IOException {
@@ -71,15 +72,13 @@ public class ClientHandler extends Thread {
             //String clientMessage;
             while (this.companion == null) {
                 try {
-                    this.sleep(200);
+                    this.sleep(50);
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
             }
             sendMessage("You are invited to chat with " + companion.getUserName());
         }
-
-
     }
 
     public void startDialog() throws IOException {
