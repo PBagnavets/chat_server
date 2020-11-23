@@ -1,6 +1,9 @@
 import java.io.*;
 import java.net.Socket;
 import java.net.SocketException;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class ClientHandler extends Thread {
 
@@ -10,6 +13,8 @@ public class ClientHandler extends Thread {
     private PrintWriter dataOut;
     private BufferedReader dataIn;
     private ClientHandler companion = null;
+    private static Lock lock = new ReentrantLock();
+    private static Condition noCompanion = lock.newCondition();
 
     public ClientHandler(Socket client, ChatServer chatServer) {
         this.chatServer = chatServer;
@@ -28,11 +33,11 @@ public class ClientHandler extends Thread {
             this.dataOut = new PrintWriter(output, true);
 
             //get name of new user
-            this.registerUser();
+            registerUser();
 
             //Select client for dialog
 
-            this.chooseCompanion();
+            chooseCompanion();
 
             //dialog
 
@@ -56,52 +61,69 @@ public class ClientHandler extends Thread {
     }
 
     public void chooseCompanion() throws IOException {
-
+        lock.lock();
         printFreeUsers();
-
-        String name;
-        if (chatServer.hasFreeUsers()) {
-            sendMessage("Enter name of your companion:");
-            name = dataIn.readLine();
-            this.setCompanion(chatServer.getFreeUser(name));
-            companion.setCompanion(this);
-            chatServer.removeFreeUser(companion.getUserName());
-            chatServer.removeFreeUser(this.name);
-        } else {
-            sendMessage("There are no free users. Please wait.");
-            //String clientMessage;
-            while (this.companion == null) {
-                try {
-                    this.sleep(50);
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+        try {
+            if (chatServer.hasFreeUsers()) {
+                inviteCompanion();
+            } else {
+                waitForInvite();
             }
-            sendMessage("You are invited to chat with " + companion.getUserName());
+        } finally {
+            lock.unlock();
         }
     }
 
+    private void waitForInvite() {
+
+        sendMessage("There are no free users. Please wait.");
+        try {
+            while (this.companion == null)
+                //synchronized (this) { this.wait(); }
+                noCompanion.await();
+        } catch (InterruptedException e) {
+            System.out.println("SOMETHING WRONG WITH LOCK");
+            e.printStackTrace();
+        }
+
+        sendMessage("You are invited to chat with " + companion.getUserName());
+    }
+
+    private void inviteCompanion() throws IOException {
+        String name;
+        sendMessage("Enter name of your companion:");
+        name = dataIn.readLine();
+        this.setCompanion(chatServer.getFreeUser(name));
+        companion.setCompanion(this);
+        chatServer.removeFreeUser(companion.getUserName());
+        chatServer.removeFreeUser(this.name);
+        //synchronized (this.companion) { this.companion.notifyAll(); }
+        noCompanion.signalAll();
+
+    }
+
     public void startDialog() throws IOException {
-        String clientMessage;
+        String clientMessage = null;
         //while socket is open
-        do {
+        while (companion != null) {
             clientMessage = dataIn.readLine();
-            chatServer.sendToUser(clientMessage, companion, this.name);
-        } while (!clientMessage.equalsIgnoreCase(ChatServer.STOP_WORD) || this.companion != null);
+            if (!clientMessage.equalsIgnoreCase(ChatServer.STOP_WORD))
+                chatServer.sendToUser(clientMessage, companion, this.name);
+            else break;
+        }
 
         if (clientMessage.equalsIgnoreCase(ChatServer.STOP_WORD)) {
             //disconnect
-            chatServer.removeUser(this.name);
             chatServer.addFreeUser(companion.getUserName(), companion);
-            companion.sendMessage("Your companion disconnects");
-            companion.setCompanion(null);
             chatServer.sendToAll("[" + this.name + "] left server", this);
+            companion.sendMessage("Your companion disconnects");
+            chatServer.removeUser(this.name);
+            companion.setCompanion(null);
             System.out.println("Users on server: " + chatServer.getUserNames().size());
             client.close();
-        } else {
-            chooseCompanion();
-            startDialog();
         }
+        chooseCompanion();
+        startDialog();
     }
 
     private void printUsers() {
